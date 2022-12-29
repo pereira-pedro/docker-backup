@@ -2,9 +2,14 @@
 
 LOG_DB=false
 LOG_VERBOSE=true
+BACKUP_DIR=/var/spool/docker-backup
+BACKUP_NAME=$(date '+%Y%m%d%H%M%S')
+ROOT_DIR=${BACKUP_DIR}/${BACKUP_NAME}
+STORAGE_S3_CONFIG=/usr/share/pontonet/docker-backup/rclone.conf
+STORAGE_S3_NAME=eu2
+STORAGE_S3_BUCKET=docker-backup
+STORAGE_S3_PATH=${STORAGE_S3_NAME}:${STORAGE_S3_BUCKET}/${BACKUP_NAME}
 
-BACKUP_DATA=$(pwd)
-ROOT_DIR=${BACKUP_DATA}/$(date '+%Y%m%d%H%M%S')
 if result=$(mkdir -p ${ROOT_DIR}) 2>&1; then
     logger -p local0.info -t "Docker Backup" "Starting backup on ${ROOT_DIR}"
 else
@@ -68,7 +73,6 @@ for container in $(docker container ls -a --no-trunc --quiet --format "{{.ID}},{
         log_info "$id" "$name" "Will start backup for mount '$volume'"
         backup_file_name=${volume//[^[:alnum:]-]/_}-$(date '+%Y%m%d%H%M%S').tar.gz
         log_info "$id" "$name" "Backup to '${backup_file_name}' started."
-        #docker run --rm -v "$volume":/backup-volume -v "${BACKUP_DATA}":/backup busybox tar -zcf /backup/$backup_file_name /backup-volume
         if result=$(docker run --rm -v "$volume":/to-backup -v "${ROOT_DIR}/data":/backup busybox tar -zcf /backup/$backup_file_name /to-backup 2>&1); then
             log_info "$id" "$name" "Backup for '${backup_file_name}' completed successfully."
         else
@@ -89,3 +93,5 @@ for container in $(docker container ls -a --no-trunc --quiet --format "{{.ID}},{
         log_info "$id" "$name" "No need to start '$name', it was previously stopped."
     fi
 done
+
+rclone sync -P ${ROOT_DIR} ${STORAGE_S3_PATH} --config ${STORAGE_S3_CONFIG} --s3-no-head
