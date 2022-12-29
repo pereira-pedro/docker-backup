@@ -8,7 +8,7 @@ ROOT_DIR=${BACKUP_DIR}/${BACKUP_NAME}
 STORAGE_S3_CONFIG=/usr/share/pontonet/docker-backup/rclone.conf
 STORAGE_S3_NAME=eu2
 STORAGE_S3_BUCKET=docker-backup
-STORAGE_S3_PATH=${STORAGE_S3_NAME}:${STORAGE_S3_BUCKET}/${BACKUP_NAME}
+STORAGE_S3_PATH=${STORAGE_S3_NAME}:${STORAGE_S3_BUCKET}/bck-${BACKUP_NAME}
 
 if result=$(mkdir -p ${ROOT_DIR}) 2>&1; then
     logger -p local0.info -t "Docker Backup" "Starting backup on ${ROOT_DIR}"
@@ -94,4 +94,4 @@ for container in $(docker container ls -a --no-trunc --quiet --format "{{.ID}},{
     fi
 done
 
-rclone sync -P ${ROOT_DIR} ${STORAGE_S3_PATH} --config ${STORAGE_S3_CONFIG} --s3-no-head
+rclone sync ${ROOT_DIR} ${STORAGE_S3_PATH} --config ${STORAGE_S3_CONFIG}
