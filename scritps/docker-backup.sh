@@ -58,25 +58,25 @@ already_backuped() {
 }
 
 store_s3() {
-    log info $1 $2 "Starting saving '$3' on S3 storage service."
+    log_info $1 $2 "Starting saving '$3' on S3 storage service."
     rclone sync $3 ${STORAGE_S3_PATH} --config ${STORAGE_S3_CONFIG}
 
     if [[ $? -eq 1 ]]; then
-        log info $1 $2 "Starting saving '$3' on S3 storage service."
+        log_info $1 $2 "Starting saving '$3' on S3 storage service."
     else
-        log error $1 $2 "Error saving '$3' to S3 storage service."
+        log_error $1 $2 "Error saving '$3' to S3 storage service."
     fi
 }
 
 save_on_cloud() {
-    log info $1 $2 "Starting saving '$3' on cloud."
+    log_info $1 $2 "Starting saving '$3' on cloud."
     local saved=0
-    [ -z "$STORAGE_S3_PATH" ] && store_s3 $1 $2 $3 || saved=1
+    [ -z "$STORAGE_S3_PATH" ] && saved=1 || store_s3 $1 $2 $3
 
     if [[ $saved -eq 1 ]]; then
-        log info $1 $2 "No cloud service set for '$3'."
+        log_info $1 $2 "No cloud service set for '$3'."
     else
-        log info $1 $2 "'$3' saved on cloud."
+        log_info $1 $2 "'$3' saved on cloud."
     fi
 }
 
