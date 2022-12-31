@@ -5,6 +5,7 @@ LOG_VERBOSE=true
 BACKUP_DIR=/var/spool/docker-backup
 BACKUP_NAME=$(date '+%Y%m%d%H%M%S')
 ROOT_DIR=${BACKUP_DIR}/${BACKUP_NAME}
+
 STORAGE_S3_CONFIG=/usr/share/pontonet/rclone.conf
 STORAGE_S3_NAME=eu2
 STORAGE_S3_BUCKET=docker-backup
@@ -44,6 +45,42 @@ log_error() {
     log "$1" "$2" "ERROR" "$3"
 }
 
+already_backuped() {
+    local backuped="false"
+    for element in "${volumes_backuped}"; do
+        if [[ "$element" == "$1" ]]; then
+            backuped="true"
+            break
+        fi
+    done
+
+    echo $backuped
+}
+
+store_s3() {
+    log info $1 $2 "Starting saving '$3' on S3 storage service."
+    rclone sync $3 ${STORAGE_S3_PATH} --config ${STORAGE_S3_CONFIG}
+
+    if [[ $? -eq 1 ]]; then
+        log info $1 $2 "Starting saving '$3' on S3 storage service."
+    else
+        log error $1 $2 "Error saving '$3' to S3 storage service."
+    fi
+}
+
+save_on_cloud() {
+    log info $1 $2 "Starting saving '$3' on cloud."
+    local saved=0
+    [ -z "$STORAGE_S3_PATH" ] && store_s3 $1 $2 $3 || saved=1
+
+    if [[ $saved -eq 1 ]]; then
+        log info $1 $2 "No cloud service set for '$3'."
+    else
+        log info $1 $2 "'$3' saved on cloud."
+    fi
+}
+
+volumes_backuped=()
 for container in $(docker container ls -a --no-trunc --quiet --format "{{.ID}},{{.Names}},{{.Mounts}}"); do
     id=$(echo $container | awk -F "," '{print $1}')
     name=$(echo $container | awk -F "," '{print $2}')
@@ -70,14 +107,22 @@ for container in $(docker container ls -a --no-trunc --quiet --format "{{.ID}},{
 
     log_info "$id" "$name" "Found the following mounts: $mounts"
     for volume in ${mounts//,/ }; do
+        if [ "$(already_backuped $volume)" == "true" ]; then
+            log_info "$id" "$name" "No need to backup '${volume}'. Already backuped"
+            continue
+        fi
         log_info "$id" "$name" "Will start backup for mount '$volume'"
         backup_file_name=${volume//[^[:alnum:]-]/_}-$(date '+%Y%m%d%H%M%S').tar.gz
+
         log_info "$id" "$name" "Backup to '${backup_file_name}' started."
-        if result=$(docker run --rm -v "$volume":/to-backup -v "${ROOT_DIR}/data":/backup busybox tar -zcf /backup/$backup_file_name /to-backup 2>&1); then
+        if result=$(docker run --rm -v "$volume":/bck -v "${ROOT_DIR}/data":/backup busybox tar -zcf /backup/$backup_file_name /bck 2>&1); then
             log_info "$id" "$name" "Backup for '${backup_file_name}' completed successfully."
+            volumes_backuped+=($volume)
         else
             log_error "$id" "$name" "Backup failed with error: $result ($?)"
         fi
+
+        save_on_cloud "$id" "$name" "${ROOT_DIR}/data/$backup_file_name" &
     done
 
     if [ "$is_running" == "true" ]; then
@@ -93,5 +138,3 @@ for container in $(docker container ls -a --no-trunc --quiet --format "{{.ID}},{
         log_info "$id" "$name" "No need to start '$name', it was previously stopped."
     fi
 done
-
-rclone sync ${ROOT_DIR} ${STORAGE_S3_PATH} --config ${STORAGE_S3_CONFIG}
