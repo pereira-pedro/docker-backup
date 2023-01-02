@@ -45,42 +45,37 @@ log_error() {
     log "$1" "$2" "ERROR" "$3"
 }
 
-already_backuped() {
-    local backuped="false"
-    for element in "${volumes_backuped}"; do
+already_backedup() {
+    local backedup="false"
+    for element in "${VOLUMES_BACKEDUP}"; do
         if [[ "$element" == "$1" ]]; then
-            backuped="true"
+            backedup="true"
             break
         fi
     done
 
-    echo $backuped
+    echo $backedup
 }
 
 store_s3() {
-    log_info $1 $2 "Starting saving '$3' on S3 storage service."
+    log_info $1 $2 "Storing '$3' in S3 service."
     rclone sync $3 ${STORAGE_S3_PATH} --config ${STORAGE_S3_CONFIG}
 
-    if [[ $? -eq 1 ]]; then
-        log_info $1 $2 "Starting saving '$3' on S3 storage service."
+    if [[ $? -eq 0 ]]; then
+        log_info $1 $2 "Successfull storing '$3' in S3 (${STORAGE_S3_PATH})."
     else
-        log_error $1 $2 "Error saving '$3' to S3 storage service."
+        log_error $1 $2 "Error storing '$3' in S3 (${STORAGE_S3_PATH})."
     fi
 }
 
-save_on_cloud() {
-    log_info $1 $2 "Starting saving '$3' on cloud."
-    local saved=0
-    [ -z "$STORAGE_S3_PATH" ] && saved=1 || store_s3 $1 $2 $3
-
-    if [[ $saved -eq 1 ]]; then
-        log_info $1 $2 "No cloud service set for '$3'."
-    else
-        log_info $1 $2 "'$3' saved on cloud."
-    fi
+store_on_cloud() {
+    for service in ${CLOUD_STORAGE_SERVICES[@]}; do
+        $service $1 $2 $3 &
+    done
 }
 
-volumes_backuped=()
+VOLUMES_BACKEDUP=()
+CLOUD_STORAGE_SERVICES=(store_s3)
 for container in $(docker container ls -a --no-trunc --quiet --format "{{.ID}},{{.Names}},{{.Mounts}}"); do
     id=$(echo $container | awk -F "," '{print $1}')
     name=$(echo $container | awk -F "," '{print $2}')
@@ -107,8 +102,8 @@ for container in $(docker container ls -a --no-trunc --quiet --format "{{.ID}},{
 
     log_info "$id" "$name" "Found the following mounts: $mounts"
     for volume in ${mounts//,/ }; do
-        if [ "$(already_backuped $volume)" == "true" ]; then
-            log_info "$id" "$name" "No need to backup '${volume}'. Already backuped"
+        if [ "$(already_backedup $volume)" == "true" ]; then
+            log_info "$id" "$name" "No need to backup '${volume}'. Already backedup"
             continue
         fi
         log_info "$id" "$name" "Will start backup for mount '$volume'"
@@ -117,12 +112,12 @@ for container in $(docker container ls -a --no-trunc --quiet --format "{{.ID}},{
         log_info "$id" "$name" "Backup to '${backup_file_name}' started."
         if result=$(docker run --rm -v "$volume":/bck -v "${ROOT_DIR}/data":/backup busybox tar -zcf /backup/$backup_file_name /bck 2>&1); then
             log_info "$id" "$name" "Backup for '${backup_file_name}' completed successfully."
-            volumes_backuped+=($volume)
+            VOLUMES_BACKEDUP+=($volume)
         else
             log_error "$id" "$name" "Backup failed with error: $result ($?)"
         fi
 
-        save_on_cloud "$id" "$name" "${ROOT_DIR}/data/$backup_file_name" &
+        store_on_cloud "$id" "$name" "${ROOT_DIR}/data/$backup_file_name" &
     done
 
     if [ "$is_running" == "true" ]; then
