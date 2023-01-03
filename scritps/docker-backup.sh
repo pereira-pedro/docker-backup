@@ -104,8 +104,9 @@ for container in $(docker container ls -a --no-trunc --quiet --format "{{.ID}},{
     log_info "$id" "$name" "Found the following mounts: $mounts"
     for volume in ${mounts//,/ }; do
         log_info "$id" "$name" "Will start backup for mount '$volume'"
-        backup_file_name=${volume//[^[:alnum:]-]/_}-$(date '+%Y%m%d%H%M%S').tar.gz
-        backedup=$(already_backedup $backup_file_name)
+        volume_name=${volume//[^[:alnum:]-]/_}
+        backup_file_name=bck-${volume_name}-$(date '+%Y%m%d%H%M%S').tar.gz
+        backedup=$(already_backedup $volume_name)
         if [ "$backedup" == "true" ]; then
             log_info "$id" "$name" "No need to backup '${volume}'. Already backedup."
             continue
@@ -114,7 +115,7 @@ for container in $(docker container ls -a --no-trunc --quiet --format "{{.ID}},{
         log_info "$id" "$name" "Backup to '${backup_file_name}' started."
         if result=$(docker run --rm -v "$volume":/bck -v "${ROOT_DIR}/data":/backup busybox tar -zcf /backup/$backup_file_name /bck 2>&1); then
             log_info "$id" "$name" "Backup to '${backup_file_name}' completed successfully."
-            VOLUMES_BACKEDUP+=($backup_file_name)
+            VOLUMES_BACKEDUP+=($volume_name)
         else
             log_error "$id" "$name" "Backup failed with error: $result ($?)"
         fi
