@@ -77,6 +77,7 @@ store_on_cloud() {
 VOLUMES_BACKEDUP=()
 CLOUD_STORAGE_SERVICES=(store_s3)
 for container in $(docker container ls -a --no-trunc --quiet --format "{{.ID}},{{.Names}},{{.Mounts}}"); do
+
     id=$(echo $container | awk -F "," '{print $1}')
     name=$(echo $container | awk -F "," '{print $2}')
     mounts=$(echo $container | awk -F "," '{print $3}')
@@ -102,17 +103,18 @@ for container in $(docker container ls -a --no-trunc --quiet --format "{{.ID}},{
 
     log_info "$id" "$name" "Found the following mounts: $mounts"
     for volume in ${mounts//,/ }; do
-        if [ "$(already_backedup $volume)" == "true" ]; then
-            log_info "$id" "$name" "No need to backup '${volume}'. Already backedup"
-            continue
-        fi
         log_info "$id" "$name" "Will start backup for mount '$volume'"
         backup_file_name=${volume//[^[:alnum:]-]/_}-$(date '+%Y%m%d%H%M%S').tar.gz
+        backedup=$(already_backedup $backup_file_name)
+        if [ "$backedup" == "true" ]; then
+            log_info "$id" "$name" "No need to backup '${volume}'. Already backedup."
+            continue
+        fi
 
         log_info "$id" "$name" "Backup to '${backup_file_name}' started."
         if result=$(docker run --rm -v "$volume":/bck -v "${ROOT_DIR}/data":/backup busybox tar -zcf /backup/$backup_file_name /bck 2>&1); then
-            log_info "$id" "$name" "Backup for '${backup_file_name}' completed successfully."
-            VOLUMES_BACKEDUP+=($volume)
+            log_info "$id" "$name" "Backup to '${backup_file_name}' completed successfully."
+            VOLUMES_BACKEDUP+=($backup_file_name)
         else
             log_error "$id" "$name" "Backup failed with error: $result ($?)"
         fi
